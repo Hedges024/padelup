@@ -58,7 +58,8 @@ app.get('/api/data', async (req, res) => {
   try {
     const players = await getValue('players', DEFAULT_PLAYERS);
     const matches = await getValue('matches', []);
-    res.json({ players, matches });
+    const bookings = await getValue('bookings', []);
+    res.json({ players, matches, bookings });
   } catch (e) {
     console.error('GET /api/data failed', e);
     res.status(500).json({ error: 'Failed to load data' });
@@ -90,6 +91,20 @@ app.post('/api/matches', async (req, res) => {
   } catch (e) {
     console.error('POST /api/matches failed', e);
     res.status(500).json({ error: 'Failed to save matches' });
+  }
+});
+
+app.post('/api/bookings', async (req, res) => {
+  try {
+    const { bookings } = req.body;
+    if (!Array.isArray(bookings)) {
+      return res.status(400).json({ error: 'bookings must be an array' });
+    }
+    await setValue('bookings', bookings);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/bookings failed', e);
+    res.status(500).json({ error: 'Failed to save bookings' });
   }
 });
 

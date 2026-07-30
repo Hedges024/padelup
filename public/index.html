@@ -164,6 +164,70 @@
   }
   .player-row input:focus{outline:2px solid var(--ball-lime); outline-offset:1px;}
 
+  .duty-banner{
+    background:rgba(227,96,60,0.12);
+    border:1px solid rgba(227,96,60,0.35);
+    color:var(--line-chalk);
+    border-radius:12px;
+    padding:10px 14px;
+    font-size:13px;
+    margin-bottom:16px;
+  }
+  .duty-banner strong{color:var(--clay-coral);}
+
+  /* ---------- Booking tab ---------- */
+  .booking-input{
+    width:100%;
+    background:var(--court-mid);
+    border:1px solid rgba(244,241,230,0.1);
+    border-radius:10px;
+    padding:11px 12px;
+    color:var(--line-chalk);
+    font-size:14px;
+    font-family:var(--font-body);
+    margin-bottom:14px;
+  }
+  .booking-input:focus{outline:2px solid var(--ball-lime); outline-offset:1px;}
+  .booking-item{
+    padding:14px 0;
+    border-bottom:1px solid rgba(244,241,230,0.06);
+  }
+  .booking-item:last-child{border-bottom:none;}
+  .booking-top{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .booking-court{font-weight:600; font-size:15px;}
+  .booking-time{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--muted);
+    margin-top:2px;
+  }
+  .booking-duty{
+    font-size:13px;
+    color:var(--muted);
+    margin:8px 0 8px;
+  }
+  .booking-duty strong{color:var(--ball-lime);}
+  .booking-check{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:6px;
+    cursor:pointer;
+  }
+  .booking-check input{
+    width:17px;
+    height:17px;
+    accent-color:var(--ball-lime);
+    cursor:pointer;
+  }
+
   /* ---------- Play tab: chip picker ---------- */
   .chip-hint{
     font-size:12.5px;
@@ -219,6 +283,60 @@
     letter-spacing:0.1em;
     color:var(--muted);
   }
+
+  /* ---------- Court sides ---------- */
+  .side-section{margin-bottom:16px;}
+  .court-sides-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin:10px 0 12px;
+  }
+  .side-col{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .side-col-label{
+    text-align:center;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:0.12em;
+    color:var(--muted-dim);
+  }
+  .side-chip{
+    padding:10px 8px;
+    border-radius:10px;
+    text-align:center;
+    font-weight:600;
+    font-size:13px;
+  }
+  .side-chip.team-a{
+    background:var(--ball-lime);
+    color:var(--court-dark);
+  }
+  .side-chip.team-b{
+    background:transparent;
+    border:1.5px solid var(--clay-coral);
+    color:var(--clay-coral);
+  }
+  .swap-row{
+    display:flex;
+    gap:10px;
+  }
+  .btn-swap{
+    flex:1;
+    padding:9px 6px;
+    border-radius:10px;
+    background:var(--court-mid);
+    border:1px solid rgba(244,241,230,0.15);
+    color:var(--muted);
+    font-family:var(--font-body);
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn-swap:active{transform:scale(0.98);}
 
   .score-row{
     display:flex;
@@ -479,11 +597,15 @@
 
   var state = {
     players: ["Player 1","Player 2","Player 3","Player 4"],
-    matches: [] // {teamA:[i,j], teamB:[k,l], sets:[{scoreA, scoreB}, ...]}
+    matches: [], // {teamA:[i,j], teamB:[k,l], sets:[{scoreA, scoreB}, ...], sides:{playerIdx:'L'|'R'}}
+    bookings: [] // {court, time, bookedBy:playerIdx, courtBooked:bool, ballsPurchased:bool, createdAt}
   };
   var currentTab = "play";
   var teamASelection = []; // indices currently chosen for team A on compose form
   var upcomingQueue = []; // array of teamA pairs (e.g. [0,2]) queued after the current match
+  var sideAssignment = {}; // playerIdx -> 'L' | 'R' for the match being composed
+  var sideAssignmentKey = ''; // which team composition sideAssignment was computed for
+  var bookingResponsible = null; // playerIdx chosen for the booking being composed (null = use rotation default)
   var storageReady = false;
 
   // ---------- Storage ----------
@@ -497,6 +619,7 @@
         var data = await res.json();
         if(Array.isArray(data.players)) state.players = data.players;
         if(Array.isArray(data.matches)) state.matches = data.matches;
+        if(Array.isArray(data.bookings)) state.bookings = data.bookings;
       }
     }catch(e){ console.error('Could not load data from server', e); }
     storageReady = true;
@@ -519,6 +642,15 @@
         body: JSON.stringify({ matches: state.matches })
       });
     }catch(e){ console.error('Could not save matches', e); }
+  }
+  async function saveBookings(){
+    try{
+      await fetch('/api/bookings', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ bookings: state.bookings })
+      });
+    }catch(e){ console.error('Could not save bookings', e); }
   }
 
   // ---------- Helpers ----------
@@ -624,6 +756,79 @@
     return pair.map(function(i){ return state.players[i]; }).join(' & ');
   }
 
+  function pairNamesWithSides(pair, sides){
+    return pair.map(function(i){
+      var label = state.players[i];
+      if(sides && sides[i]) label += ' (' + sides[i] + ')';
+      return escapeHtml(label);
+    }).join(' & ');
+  }
+
+  // ---------- Court sides ----------
+  // Looks back through match history for the most recent match where these
+  // two exact players were teammates, and returns the sides they played
+  // that time (or null if they've never partnered before).
+  function findLastSidesForPartnership(a, b){
+    for(var idx = state.matches.length - 1; idx >= 0; idx--){
+      var m = state.matches[idx];
+      if(!m.sides) continue;
+      var teams = [m.teamA, m.teamB];
+      for(var t = 0; t < teams.length; t++){
+        var team = teams[t];
+        if(team.indexOf(a) !== -1 && team.indexOf(b) !== -1){
+          return m.sides;
+        }
+      }
+    }
+    return null;
+  }
+
+  function suggestSidesForTeam(pair){
+    var a = pair[0], b = pair[1];
+    var last = findLastSidesForPartnership(a, b);
+    var result = {};
+    if(last && (last[a] || last[b])){
+      // Flip whatever side each of them played last time they partnered.
+      result[a] = last[a] === 'L' ? 'R' : 'L';
+      result[b] = last[b] === 'L' ? 'R' : 'L';
+    } else {
+      // First time partnering: default the lower player index to Left.
+      var lo = Math.min(a, b), hi = Math.max(a, b);
+      result[lo] = 'L';
+      result[hi] = 'R';
+    }
+    return result;
+  }
+
+  function suggestSides(teamA, teamB){
+    var a = suggestSidesForTeam(teamA);
+    var b = suggestSidesForTeam(teamB);
+    var combined = {};
+    Object.keys(a).forEach(function(k){ combined[k] = a[k]; });
+    Object.keys(b).forEach(function(k){ combined[k] = b[k]; });
+    return combined;
+  }
+
+  function teamKey(teamA, teamB){
+    return teamA.slice().sort().join(',') + '|' + teamB.slice().sort().join(',');
+  }
+
+  function ensureSideAssignment(teamA, teamB){
+    var key = teamKey(teamA, teamB);
+    if(key !== sideAssignmentKey){
+      sideAssignment = suggestSides(teamA, teamB);
+      sideAssignmentKey = key;
+    }
+  }
+
+  function swapTeamSides(letter){
+    var pair = letter === 'A' ? teamASelection.slice() : otherTwo(teamASelection);
+    var i = pair[0], j = pair[1];
+    var tmp = sideAssignment[i];
+    sideAssignment[i] = sideAssignment[j];
+    sideAssignment[j] = tmp;
+  }
+
   // ---------- Rendering ----------
   function courtBgSvg(){
     return '<svg class="court-bg" viewBox="0 0 400 160" preserveAspectRatio="none">' +
@@ -645,6 +850,7 @@
       '<div class="tabbar">' +
         tabBtn('players','Players') +
         tabBtn('play','Play') +
+        tabBtn('booking','Booking') +
         tabBtn('standings','Standings') +
       '</div>' +
       '<div class="content" id="content"></div>';
@@ -667,6 +873,7 @@
     if(!el) return;
     if(currentTab === 'players') el.innerHTML = playersHtml();
     else if(currentTab === 'play') el.innerHTML = playHtml();
+    else if(currentTab === 'booking') el.innerHTML = bookingHtml();
     else el.innerHTML = standingsHtml();
     bindContentEvents();
   }
@@ -691,6 +898,7 @@
     }
     var teamA = teamASelection.slice();
     var teamB = otherTwo(teamA);
+    ensureSideAssignment(teamA, teamB);
 
     var chips = state.players.map(function(name,i){
       var cls = teamA.indexOf(i)!==-1 ? 'team-a' : 'team-b';
@@ -699,26 +907,55 @@
 
     var canSave = teamA.length===2 && teamB.length===2;
 
+    var aLeft = sideAssignment[teamA[0]] === 'L' ? teamA[0] : teamA[1];
+    var aRight = sideAssignment[teamA[0]] === 'R' ? teamA[0] : teamA[1];
+    var bLeft = sideAssignment[teamB[0]] === 'L' ? teamB[0] : teamB[1];
+    var bRight = sideAssignment[teamB[0]] === 'R' ? teamB[0] : teamB[1];
+
+    var courtSidesHtml =
+      '<div class="side-section">' +
+        '<p class="chip-hint">Court sides for this match. PadelUp alternates each pair\'s sides every time they partner again &mdash; tap a team to swap.</p>' +
+        '<div class="court-sides-grid">' +
+          '<div class="side-col"><div class="side-col-label">LEFT</div>' +
+            '<div class="side-chip team-a">'+escapeHtml(state.players[aLeft])+'</div>' +
+            '<div class="side-chip team-b">'+escapeHtml(state.players[bLeft])+'</div>' +
+          '</div>' +
+          '<div class="side-col"><div class="side-col-label">RIGHT</div>' +
+            '<div class="side-chip team-a">'+escapeHtml(state.players[aRight])+'</div>' +
+            '<div class="side-chip team-b">'+escapeHtml(state.players[bRight])+'</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="swap-row">' +
+          '<button class="btn-swap" data-swap-team="A">&#8646; Swap '+escapeHtml(pairNames(teamA))+'</button>' +
+          '<button class="btn-swap" data-swap-team="B">&#8646; Swap '+escapeHtml(pairNames(teamB))+'</button>' +
+        '</div>' +
+      '</div>';
+
     var setBlocks = '';
     for(var s=1; s<=3; s++){
       var label = 'SET '+s + (s===3 ? ' <span class="set-optional">(leave blank if not played)</span>' : '');
       setBlocks +=
         '<div class="set-label">'+label+'</div>' +
         '<div class="score-row set-block">' +
-          '<div class="score-team a">' + (s===1?'<div class="names">'+escapeHtml(pairNames(teamA))+'</div>':'') +
+          '<div class="score-team a">' + (s===1?'<div class="names">'+pairNamesWithSides(teamA, sideAssignment)+'</div>':'') +
             '<input type="number" min="0" max="99" class="setScoreA" data-set="'+s+'" placeholder="0" inputmode="numeric"></div>' +
           '<div class="vs-label">VS</div>' +
-          '<div class="score-team b">' + (s===1?'<div class="names">'+escapeHtml(pairNames(teamB))+'</div>':'') +
+          '<div class="score-team b">' + (s===1?'<div class="names">'+pairNamesWithSides(teamB, sideAssignment)+'</div>':'') +
             '<input type="number" min="0" max="99" class="setScoreB" data-set="'+s+'" placeholder="0" inputmode="numeric"></div>' +
         '</div>';
     }
 
+    var dutyName = state.players[nextResponsiblePlayer()];
+    var dutyBanner = '<div class="duty-banner">&#127934; Court &amp; balls duty: <strong>'+escapeHtml(dutyName)+'</strong></div>';
+
     var html = '<div class="card">' +
       '<h3>Next Match</h3>' +
+      dutyBanner +
       '<p class="chip-hint">Tap two players to form Team A &mdash; the remaining two become Team B. Or let PadelUp shuffle the next few matchups for you.</p>' +
       '<button class="btn-randomize" id="randomizeBtn">&#128256; Randomize Teams</button>' +
       '<div class="chip-grid">' + chips + '</div>' +
       '<div class="net-divider"><div class="line"></div><span>NET</span><div class="line"></div></div>' +
+      courtSidesHtml +
       setBlocks +
       '<button class="btn btn-primary" id="saveMatch" '+(canSave?'':'disabled')+'>Save Match</button>' +
       upcomingHtml() +
@@ -755,8 +992,8 @@
         '<div>' +
           '<div class="match-round">MATCH '+(idx+1)+' &middot; '+playedSets.length+' SET'+(playedSets.length!==1?'S':'')+'</div>' +
           '<div class="match-teams">' +
-            '<span class="'+(aWon?'t-win':'t-lose')+'">'+escapeHtml(pairNames(m.teamA))+'</span><br>' +
-            '<span class="'+(bWon?'t-win':'t-lose')+'">'+escapeHtml(pairNames(m.teamB))+'</span>' +
+            '<span class="'+(aWon?'t-win':'t-lose')+'">'+pairNamesWithSides(m.teamA, m.sides)+'</span><br>' +
+            '<span class="'+(bWon?'t-win':'t-lose')+'">'+pairNamesWithSides(m.teamB, m.sides)+'</span>' +
           '</div>' +
           (playedSets.length>1 ? '<div class="match-sets-line">'+setsLine+'</div>' : '') +
           (dateStr ? '<div class="match-date">'+dateStr+'</div>' : '') +
@@ -821,6 +1058,73 @@
       ' &middot; ' + d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
   }
 
+  // ---------- Booking duty rotation ----------
+  // Duty simply cycles through the 4 players in order, one per booking
+  // created — so as soon as booking #1 is saved, the app already knows
+  // booking #2's duty falls to the next player in line.
+  function nextResponsiblePlayer(){
+    return state.bookings.length % state.players.length;
+  }
+
+  function formatBookingTime(value){
+    if(!value) return 'No time set';
+    var d = new Date(value);
+    if(isNaN(d.getTime())) return value;
+    return d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}) +
+      ' &middot; ' + d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  }
+
+  function bookingHtml(){
+    if(bookingResponsible === null || bookingResponsible >= state.players.length){
+      bookingResponsible = nextResponsiblePlayer();
+    }
+    var dutyChips = state.players.map(function(name, i){
+      var cls = bookingResponsible === i ? 'team-a' : 'team-b';
+      return '<div class="chip '+cls+'" data-duty-chip="'+i+'">'+escapeHtml(name)+'</div>';
+    }).join('');
+
+    var html = '<div class="card">' +
+      '<h3>New Booking</h3>' +
+      '<p class="chip-hint">Court duty and ball duty rotate together, one player per booking. PadelUp has already picked who\'s up &mdash; tap a name to override.</p>' +
+      '<div class="chip-grid">' + dutyChips + '</div>' +
+      '<div class="set-label" style="margin-top:16px;">COURT / VENUE</div>' +
+      '<input type="text" id="bookingCourt" class="booking-input" placeholder="e.g. Padel Club, Court 2">' +
+      '<div class="set-label">DATE &amp; TIME</div>' +
+      '<input type="datetime-local" id="bookingTime" class="booking-input">' +
+      '<button class="btn btn-primary" id="saveBooking">Save Booking</button>' +
+      '</div>';
+
+    html += '<div class="card"><h3>Bookings</h3><div id="bookingList">' + bookingListHtml() + '</div></div>';
+    return html;
+  }
+
+  function bookingListHtml(){
+    if(state.bookings.length === 0){
+      return '<div class="empty-state">No bookings yet. Add one above &mdash; PadelUp will assign court + ball duty automatically as you go.</div>';
+    }
+    var sorted = state.bookings.map(function(b, idx){ return {b:b, idx:idx}; }).sort(function(x,y){
+      var tx = x.b.time ? new Date(x.b.time).getTime() : 0;
+      var ty = y.b.time ? new Date(y.b.time).getTime() : 0;
+      return tx - ty;
+    });
+    return sorted.map(function(entry){
+      var b = entry.b, idx = entry.idx;
+      var name = state.players[b.bookedBy] || 'Unassigned';
+      return '<div class="booking-item">' +
+        '<div class="booking-top">' +
+          '<div>' +
+            '<div class="booking-court">'+escapeHtml(b.court || 'Venue TBC')+'</div>' +
+            '<div class="booking-time">'+formatBookingTime(b.time)+'</div>' +
+          '</div>' +
+          '<button class="del-btn" data-del-booking="'+idx+'" aria-label="Delete booking">&times;</button>' +
+        '</div>' +
+        '<div class="booking-duty">On duty: <strong>'+escapeHtml(name)+'</strong></div>' +
+        '<label class="booking-check"><input type="checkbox" data-booking-court-check="'+idx+'" '+(b.courtBooked?'checked':'')+'> Court booked</label>' +
+        '<label class="booking-check"><input type="checkbox" data-booking-balls-check="'+idx+'" '+(b.ballsPurchased?'checked':'')+'> Balls purchased</label>' +
+      '</div>';
+    }).join('');
+  }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, function(c){
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
@@ -846,6 +1150,12 @@
       if(randomizeBtn){
         randomizeBtn.addEventListener('click', randomizeTeams);
       }
+      document.querySelectorAll('[data-swap-team]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          swapTeamSides(btn.getAttribute('data-swap-team'));
+          renderContent();
+        });
+      });
       var saveBtn = document.getElementById('saveMatch');
       if(saveBtn){
         saveBtn.addEventListener('click', function(){
@@ -860,7 +1170,9 @@
           });
           var teamA = teamASelection.slice();
           var teamB = otherTwo(teamA);
-          state.matches.push({teamA:teamA, teamB:teamB, sets:sets, playedAt:new Date().toISOString()});
+          var sides = {};
+          teamA.concat(teamB).forEach(function(i){ sides[i] = sideAssignment[i]; });
+          state.matches.push({teamA:teamA, teamB:teamB, sets:sets, sides:sides, playedAt:new Date().toISOString()});
           saveMatches();
           if(upcomingQueue.length > 0){
             teamASelection = upcomingQueue.shift();
@@ -875,6 +1187,54 @@
           var idx = parseInt(btn.getAttribute('data-del'),10);
           state.matches.splice(idx,1);
           saveMatches();
+          renderContent();
+        });
+      });
+    } else if(currentTab === 'booking'){
+      document.querySelectorAll('[data-duty-chip]').forEach(function(chip){
+        chip.addEventListener('click', function(){
+          bookingResponsible = parseInt(chip.getAttribute('data-duty-chip'),10);
+          renderContent();
+        });
+      });
+      var saveBookingBtn = document.getElementById('saveBooking');
+      if(saveBookingBtn){
+        saveBookingBtn.addEventListener('click', function(){
+          var court = document.getElementById('bookingCourt').value.trim();
+          var time = document.getElementById('bookingTime').value;
+          state.bookings.push({
+            court: court,
+            time: time,
+            bookedBy: bookingResponsible,
+            courtBooked: false,
+            ballsPurchased: false,
+            createdAt: new Date().toISOString()
+          });
+          saveBookings();
+          bookingResponsible = nextResponsiblePlayer();
+          renderContent();
+        });
+      }
+      document.querySelectorAll('[data-booking-court-check]').forEach(function(box){
+        box.addEventListener('change', function(){
+          var idx = parseInt(box.getAttribute('data-booking-court-check'),10);
+          state.bookings[idx].courtBooked = box.checked;
+          saveBookings();
+        });
+      });
+      document.querySelectorAll('[data-booking-balls-check]').forEach(function(box){
+        box.addEventListener('change', function(){
+          var idx = parseInt(box.getAttribute('data-booking-balls-check'),10);
+          state.bookings[idx].ballsPurchased = box.checked;
+          saveBookings();
+        });
+      });
+      document.querySelectorAll('[data-del-booking]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var idx = parseInt(btn.getAttribute('data-del-booking'),10);
+          state.bookings.splice(idx,1);
+          saveBookings();
+          bookingResponsible = nextResponsiblePlayer();
           renderContent();
         });
       });
