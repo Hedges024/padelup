@@ -263,6 +263,10 @@
     border-color:var(--clay-coral);
     color:var(--clay-coral);
   }
+  .chip.selected{
+    box-shadow:0 0 0 2px var(--line-chalk);
+    transform:scale(0.97);
+  }
 
   .net-divider{
     display:flex;
@@ -284,59 +288,25 @@
     color:var(--muted);
   }
 
-  /* ---------- Court sides ---------- */
-  .side-section{margin-bottom:16px;}
-  .court-sides-grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:12px;
-    margin:10px 0 12px;
-  }
-  .side-col{
+  /* ---------- Combined team + court-side view ---------- */
+  .side-col-label-row{
     display:flex;
-    flex-direction:column;
-    gap:8px;
+    justify-content:space-between;
+    padding:0 4px;
+    margin-bottom:8px;
   }
-  .side-col-label{
-    text-align:center;
+  .side-col-label-row span{
     font-family:var(--font-mono);
     font-size:10.5px;
     letter-spacing:0.12em;
     color:var(--muted-dim);
   }
-  .side-chip{
-    padding:10px 8px;
-    border-radius:10px;
-    text-align:center;
-    font-weight:600;
-    font-size:13px;
-  }
-  .side-chip.team-a{
-    background:var(--ball-lime);
-    color:var(--court-dark);
-  }
-  .side-chip.team-b{
-    background:transparent;
-    border:1.5px solid var(--clay-coral);
-    color:var(--clay-coral);
-  }
-  .swap-row{
-    display:flex;
+  .court-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
     gap:10px;
+    margin-bottom:18px;
   }
-  .btn-swap{
-    flex:1;
-    padding:9px 6px;
-    border-radius:10px;
-    background:var(--court-mid);
-    border:1px solid rgba(244,241,230,0.15);
-    color:var(--muted);
-    font-family:var(--font-body);
-    font-size:11.5px;
-    font-weight:600;
-    cursor:pointer;
-  }
-  .btn-swap:active{transform:scale(0.98);}
 
   .score-row{
     display:flex;
@@ -601,10 +571,9 @@
     bookings: [] // {court, time, bookedBy:playerIdx, courtBooked:bool, ballsPurchased:bool, createdAt}
   };
   var currentTab = "play";
-  var teamASelection = []; // indices currently chosen for team A on compose form
   var upcomingQueue = []; // array of teamA pairs (e.g. [0,2]) queued after the current match
-  var sideAssignment = {}; // playerIdx -> 'L' | 'R' for the match being composed
-  var sideAssignmentKey = ''; // which team composition sideAssignment was computed for
+  var courtSlots = null; // {AL, AR, BL, BR} -> player index. Single source of truth for team + side.
+  var selectedSlot = null; // slot key currently picked up, waiting for a second tap to swap with
   var bookingResponsible = null; // playerIdx chosen for the booking being composed (null = use rotation default)
   var storageReady = false;
 
@@ -730,25 +699,56 @@
     return result;
   }
 
+  function buildSlotsFromTeamsAndSides(teamA, teamB, sides){
+    return {
+      AL: sides[teamA[0]] === 'L' ? teamA[0] : teamA[1],
+      AR: sides[teamA[0]] === 'R' ? teamA[0] : teamA[1],
+      BL: sides[teamB[0]] === 'L' ? teamB[0] : teamB[1],
+      BR: sides[teamB[0]] === 'R' ? teamB[0] : teamB[1]
+    };
+  }
+
+  function slotsToSides(slots){
+    var sides = {};
+    sides[slots.AL] = 'L';
+    sides[slots.AR] = 'R';
+    sides[slots.BL] = 'L';
+    sides[slots.BR] = 'R';
+    return sides;
+  }
+
+  function ensureCourtSlots(){
+    if(courtSlots) return;
+    var teamA = suggestSplit();
+    var teamB = otherTwo(teamA);
+    courtSlots = buildSlotsFromTeamsAndSides(teamA, teamB, suggestSides(teamA, teamB));
+  }
+
+  function tapSlot(slotKey){
+    if(selectedSlot === null){
+      selectedSlot = slotKey;
+    } else if(selectedSlot === slotKey){
+      selectedSlot = null;
+    } else {
+      var tmp = courtSlots[selectedSlot];
+      courtSlots[selectedSlot] = courtSlots[slotKey];
+      courtSlots[slotKey] = tmp;
+      selectedSlot = null;
+    }
+    renderContent();
+  }
+
   function randomizeTeams(){
     // Guarantees: (1) the very first pairing always differs from whatever
     // is currently shown, and (2) every player partners with each of the
     // other three before any partnership repeats.
-    var avoid = teamASelection.length === 2 ? teamASelection : null;
+    var avoid = courtSlots ? [courtSlots.AL, courtSlots.AR] : null;
     var schedule = generateRoundRobinSchedule(4, avoid);
-    teamASelection = schedule[0];
+    var teamA0 = schedule[0];
+    var teamB0 = otherTwo(teamA0);
+    courtSlots = buildSlotsFromTeamsAndSides(teamA0, teamB0, suggestSides(teamA0, teamB0));
     upcomingQueue = schedule.slice(1);
-    renderContent();
-  }
-
-  function toggleChip(i){
-    var idx = teamASelection.indexOf(i);
-    if(idx !== -1){
-      teamASelection.splice(idx,1);
-    } else {
-      if(teamASelection.length >= 2) teamASelection.shift();
-      teamASelection.push(i);
-    }
+    selectedSlot = null;
     renderContent();
   }
 
@@ -807,26 +807,6 @@
     Object.keys(a).forEach(function(k){ combined[k] = a[k]; });
     Object.keys(b).forEach(function(k){ combined[k] = b[k]; });
     return combined;
-  }
-
-  function teamKey(teamA, teamB){
-    return teamA.slice().sort().join(',') + '|' + teamB.slice().sort().join(',');
-  }
-
-  function ensureSideAssignment(teamA, teamB){
-    var key = teamKey(teamA, teamB);
-    if(key !== sideAssignmentKey){
-      sideAssignment = suggestSides(teamA, teamB);
-      sideAssignmentKey = key;
-    }
-  }
-
-  function swapTeamSides(letter){
-    var pair = letter === 'A' ? teamASelection.slice() : otherTwo(teamASelection);
-    var i = pair[0], j = pair[1];
-    var tmp = sideAssignment[i];
-    sideAssignment[i] = sideAssignment[j];
-    sideAssignment[j] = tmp;
   }
 
   // ---------- Rendering ----------
@@ -890,46 +870,25 @@
   }
 
   function playHtml(){
-    if(teamASelection.length !== 2){
-      teamASelection = suggestSplit();
-    }
+    ensureCourtSlots();
     if(upcomingQueue.length === 0){
-      upcomingQueue = generateRoundRobinSchedule(3, teamASelection);
+      upcomingQueue = generateRoundRobinSchedule(3, [courtSlots.AL, courtSlots.AR]);
     }
-    var teamA = teamASelection.slice();
-    var teamB = otherTwo(teamA);
-    ensureSideAssignment(teamA, teamB);
+    var teamA = [courtSlots.AL, courtSlots.AR];
+    var teamB = [courtSlots.BL, courtSlots.BR];
+    var sides = slotsToSides(courtSlots);
 
-    var chips = state.players.map(function(name,i){
-      var cls = teamA.indexOf(i)!==-1 ? 'team-a' : 'team-b';
-      return '<div class="chip '+cls+'" data-chip="'+i+'">'+escapeHtml(name)+'</div>';
-    }).join('');
+    function slotChip(slotKey){
+      var teamCls = slotKey.charAt(0) === 'A' ? 'team-a' : 'team-b';
+      var selectedCls = selectedSlot === slotKey ? ' selected' : '';
+      return '<div class="chip '+teamCls+selectedCls+'" data-slot="'+slotKey+'">'+escapeHtml(state.players[courtSlots[slotKey]])+'</div>';
+    }
 
-    var canSave = teamA.length===2 && teamB.length===2;
-
-    var aLeft = sideAssignment[teamA[0]] === 'L' ? teamA[0] : teamA[1];
-    var aRight = sideAssignment[teamA[0]] === 'R' ? teamA[0] : teamA[1];
-    var bLeft = sideAssignment[teamB[0]] === 'L' ? teamB[0] : teamB[1];
-    var bRight = sideAssignment[teamB[0]] === 'R' ? teamB[0] : teamB[1];
-
-    var courtSidesHtml =
-      '<div class="side-section">' +
-        '<p class="chip-hint">Court sides for this match. PadelUp alternates each pair\'s sides every time they partner again &mdash; tap a team to swap.</p>' +
-        '<div class="court-sides-grid">' +
-          '<div class="side-col"><div class="side-col-label">LEFT</div>' +
-            '<div class="side-chip team-a">'+escapeHtml(state.players[aLeft])+'</div>' +
-            '<div class="side-chip team-b">'+escapeHtml(state.players[bLeft])+'</div>' +
-          '</div>' +
-          '<div class="side-col"><div class="side-col-label">RIGHT</div>' +
-            '<div class="side-chip team-a">'+escapeHtml(state.players[aRight])+'</div>' +
-            '<div class="side-chip team-b">'+escapeHtml(state.players[bRight])+'</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="swap-row">' +
-          '<button class="btn-swap" data-swap-team="A">&#8646; Swap '+escapeHtml(pairNames(teamA))+'</button>' +
-          '<button class="btn-swap" data-swap-team="B">&#8646; Swap '+escapeHtml(pairNames(teamB))+'</button>' +
-        '</div>' +
-      '</div>';
+    var courtViewHtml =
+      '<div class="side-col-label-row"><span>LEFT</span><span>RIGHT</span></div>' +
+      '<div class="court-grid">' + slotChip('AL') + slotChip('AR') + '</div>' +
+      '<div class="net-divider"><div class="line"></div><span>NET</span><div class="line"></div></div>' +
+      '<div class="court-grid">' + slotChip('BL') + slotChip('BR') + '</div>';
 
     var setBlocks = '';
     for(var s=1; s<=3; s++){
@@ -937,10 +896,10 @@
       setBlocks +=
         '<div class="set-label">'+label+'</div>' +
         '<div class="score-row set-block">' +
-          '<div class="score-team a">' + (s===1?'<div class="names">'+pairNamesWithSides(teamA, sideAssignment)+'</div>':'') +
+          '<div class="score-team a">' + (s===1?'<div class="names">'+pairNamesWithSides(teamA, sides)+'</div>':'') +
             '<input type="number" min="0" max="99" class="setScoreA" data-set="'+s+'" placeholder="0" inputmode="numeric"></div>' +
           '<div class="vs-label">VS</div>' +
-          '<div class="score-team b">' + (s===1?'<div class="names">'+pairNamesWithSides(teamB, sideAssignment)+'</div>':'') +
+          '<div class="score-team b">' + (s===1?'<div class="names">'+pairNamesWithSides(teamB, sides)+'</div>':'') +
             '<input type="number" min="0" max="99" class="setScoreB" data-set="'+s+'" placeholder="0" inputmode="numeric"></div>' +
         '</div>';
     }
@@ -951,13 +910,11 @@
     var html = '<div class="card">' +
       '<h3>Next Match</h3>' +
       dutyBanner +
-      '<p class="chip-hint">Tap two players to form Team A &mdash; the remaining two become Team B. Or let PadelUp shuffle the next few matchups for you.</p>' +
+      '<p class="chip-hint">Tap a player, then tap another to swap them &mdash; moves them between teams, sides, or both in one go. Or let PadelUp shuffle the next few matchups for you.</p>' +
       '<button class="btn-randomize" id="randomizeBtn">&#128256; Randomize Teams</button>' +
-      '<div class="chip-grid">' + chips + '</div>' +
-      '<div class="net-divider"><div class="line"></div><span>NET</span><div class="line"></div></div>' +
-      courtSidesHtml +
+      courtViewHtml +
       setBlocks +
-      '<button class="btn btn-primary" id="saveMatch" '+(canSave?'':'disabled')+'>Save Match</button>' +
+      '<button class="btn btn-primary" id="saveMatch">Save Match</button>' +
       upcomingHtml() +
       '</div>';
 
@@ -1141,21 +1098,15 @@
         });
       });
     } else if(currentTab === 'play'){
-      document.querySelectorAll('[data-chip]').forEach(function(chip){
+      document.querySelectorAll('[data-slot]').forEach(function(chip){
         chip.addEventListener('click', function(){
-          toggleChip(parseInt(chip.getAttribute('data-chip'),10));
+          tapSlot(chip.getAttribute('data-slot'));
         });
       });
       var randomizeBtn = document.getElementById('randomizeBtn');
       if(randomizeBtn){
         randomizeBtn.addEventListener('click', randomizeTeams);
       }
-      document.querySelectorAll('[data-swap-team]').forEach(function(btn){
-        btn.addEventListener('click', function(){
-          swapTeamSides(btn.getAttribute('data-swap-team'));
-          renderContent();
-        });
-      });
       var saveBtn = document.getElementById('saveMatch');
       if(saveBtn){
         saveBtn.addEventListener('click', function(){
@@ -1168,17 +1119,20 @@
             if(isNaN(scoreB)) scoreB = 0;
             sets.push({scoreA:scoreA, scoreB:scoreB});
           });
-          var teamA = teamASelection.slice();
-          var teamB = otherTwo(teamA);
-          var sides = {};
-          teamA.concat(teamB).forEach(function(i){ sides[i] = sideAssignment[i]; });
+          var teamA = [courtSlots.AL, courtSlots.AR];
+          var teamB = [courtSlots.BL, courtSlots.BR];
+          var sides = slotsToSides(courtSlots);
           state.matches.push({teamA:teamA, teamB:teamB, sets:sets, sides:sides, playedAt:new Date().toISOString()});
           saveMatches();
+          var nextTeamA, nextTeamB;
           if(upcomingQueue.length > 0){
-            teamASelection = upcomingQueue.shift();
+            nextTeamA = upcomingQueue.shift();
           } else {
-            teamASelection = suggestSplit();
+            nextTeamA = suggestSplit();
           }
+          nextTeamB = otherTwo(nextTeamA);
+          courtSlots = buildSlotsFromTeamsAndSides(nextTeamA, nextTeamB, suggestSides(nextTeamA, nextTeamB));
+          selectedSlot = null;
           renderContent();
         });
       }
@@ -1245,7 +1199,9 @@
           if(confirm('Clear all matches and reset the standings? Player names are kept.')){
             state.matches = [];
             saveMatches();
-            teamASelection = [];
+            courtSlots = null;
+            upcomingQueue = [];
+            selectedSlot = null;
             renderContent();
           }
         });
