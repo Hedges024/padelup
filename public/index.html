@@ -395,6 +395,27 @@
   .btn-randomize:active{transform:scale(0.98);}
   .btn-randomize:hover{background:rgba(212,225,87,0.14);}
 
+  .btn-playtomic{
+    display:block;
+    width:100%;
+    box-sizing:border-box;
+    padding:13px;
+    border-radius:10px;
+    border:none;
+    background:var(--clay-coral);
+    color:var(--line-chalk);
+    font-family:var(--font-body);
+    font-weight:700;
+    font-size:14px;
+    text-align:center;
+    text-decoration:none;
+    cursor:pointer;
+    margin-bottom:16px;
+    transition:transform .1s ease, opacity .15s ease;
+  }
+  .btn-playtomic:active{transform:scale(0.98);}
+  .btn-playtomic:hover{opacity:0.92;}
+
   .upcoming-card{margin-top:14px;}
   .upcoming-title{
     font-size:11px;
@@ -1042,6 +1063,7 @@
 
     var html = '<div class="card">' +
       '<h3>New Booking</h3>' +
+      '<a class="btn-playtomic" href="https://playtomic.com" target="_blank" rel="noopener noreferrer">&#127934; Open Playtomic to book a court &#8599;</a>' +
       '<p class="chip-hint">Court duty and ball duty rotate together, one player per booking. PadelUp has already picked who\'s up &mdash; tap a name to override.</p>' +
       '<div class="chip-grid">' + dutyChips + '</div>' +
       '<div class="set-label" style="margin-top:16px;">COURT / VENUE</div>' +
